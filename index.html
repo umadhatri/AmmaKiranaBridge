@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Amma's Kirana Bridge</title>
+  <style>
+    :root { --ink:#14213d; --violet:#5b36c8; --gold:#f4b840; --paper:#fffdfa; --mist:#eef1ff; --line:#d9def0; }
+    * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:linear-gradient(135deg,#eef1ff 0%,#fffdfa 60%); font:16px/1.5 system-ui,-apple-system,"Noto Sans Telugu",sans-serif; }
+    main { max-width:1080px; margin:auto; padding:28px 20px 56px; } header { display:flex; align-items:center; gap:14px; margin-bottom:34px; }
+    .mark { width:44px; height:44px; display:grid; place-items:center; border-radius:14px; background:var(--violet); color:white; font-size:23px; font-weight:700; } h1 { font-size:clamp(1.55rem,4vw,2.25rem); margin:0; letter-spacing:-.04em; } header p { margin:0; color:#58617c; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start; } section { background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:24px; padding:26px; box-shadow:0 16px 45px rgba(25,35,70,.08); }
+    h2 { margin:0 0 8px; font-size:1.2rem; } .help { margin:0 0 20px; color:#5e6680; font-size:.94rem; } label { display:block; font-size:.88rem; font-weight:700; margin:16px 0 7px; }
+    textarea,select { width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font:inherit; color:var(--ink); background:white; } textarea { min-height:92px; resize:vertical; }
+    button { border:0; border-radius:12px; padding:12px 15px; font:inherit; font-weight:750; cursor:pointer; } .record { width:100%; background:var(--mist); color:var(--violet); border:1px dashed #a99ce9; } .record.live { background:#ffe7e7; color:#ae2525; border-color:#e79c9c; } .go { width:100%; margin-top:20px; background:var(--violet); color:white; } .go:disabled { opacity:.65; cursor:wait; }
+    .or { display:flex; align-items:center; gap:10px; color:#8189a0; font-size:.83rem; margin:18px 0 0; } .or:before,.or:after { content:""; height:1px; flex:1; background:var(--line); }
+    .receipt { min-height:360px; border-radius:16px; border:1px dashed #b8bfd7; background:var(--paper); padding:17px; } .empty { color:#717993; margin-top:90px; text-align:center; }
+    .transcript { border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:8px; color:#303a5c; } .transcript small { display:block; color:#757e9c; margin-bottom:4px; }
+    .item { display:grid; grid-template-columns:1fr auto; gap:8px; padding:13px 0; border-bottom:1px solid #edf0f8; } .shop { font-weight:750; } .telugu { color:#646d89; font-size:.9rem; } .amount { text-align:right; white-space:nowrap; font-weight:700; } .warn { color:#a25a00; font-size:.78rem; }
+    .speak { background:var(--gold); color:#3e2800; margin-top:16px; width:100%; } .status { min-height:22px; color:#606984; font-size:.9rem; margin-top:12px; }
+    @media (max-width:720px) { .grid { grid-template-columns:1fr; } main { padding-top:20px; } section { padding:20px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div class="mark">అ</div><div><h1>Amma’s Kirana Bridge</h1><p>Speak the list at home. Share it clearly at the shop.</p></div></header>
+    <div class="grid">
+      <section>
+        <h2>Amma’s list</h2><p class="help">Record a short Telugu voice note, or type it below.</p>
+        <button class="record" id="record" type="button">● Start recording</button>
+        <p class="or">or type the note</p>
+        <label for="transcript">Telugu shopping list</label>
+        <textarea id="transcript" placeholder="ఉదాహరణ: రెండు కిలోల బియ్యం, అర కిలో మినపప్పు, ఒక లీటర్ నూనె"></textarea>
+        <label for="language">Shopkeeper’s language</label>
+        <select id="language"><option>English</option><option>Hindi</option><option>Telugu</option><option>Tamil</option><option>Kannada</option></select>
+        <button class="go" id="make" type="button">Make the shop list</button><div class="status" id="status"></div>
+      </section>
+      <section>
+        <h2>Shopkeeper’s list</h2><p class="help" id="shopLabel">Clear names, quantities, and units.</p>
+        <div class="receipt" id="result"><p class="empty">Your translated list will appear here.</p></div>
+        <button class="speak" id="speak" type="button" hidden>▶ Read this list aloud</button>
+      </section>
+    </div>
+  </main>
+  <script>
+    let recorder, chunks = [], audioBlob, result;
+    const $ = id => document.getElementById(id);
+    $("record").onclick = async () => {
+      if (recorder?.state === "recording") { recorder.stop(); return; }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        recorder = new MediaRecorder(stream); chunks=[];
+        recorder.ondataavailable = event => chunks.push(event.data);
+        recorder.onstop = () => { audioBlob = new Blob(chunks,{type:recorder.mimeType}); $("record").textContent="✓ Voice note ready — record again"; $("record").classList.remove("live"); stream.getTracks().forEach(track=>track.stop()); };
+        recorder.start(); $("record").textContent="■ Stop recording"; $("record").classList.add("live");
+      } catch { $("status").textContent="Microphone access was not available. You can type the Telugu list instead."; }
+    };
+    $("make").onclick = async () => {
+      const transcript=$("transcript").value.trim();
+      if (!transcript && !audioBlob) { $("status").textContent="Please record a note or type a Telugu list."; return; }
+      const button=$("make"); button.disabled=true; $("status").textContent="Making the list…";
+      const form=new FormData(); form.append("transcript",transcript); form.append("target_language",$("language").value); if(audioBlob) form.append("audio",audioBlob,"amma-note.webm");
+      try { const response=await fetch("/api/list",{method:"POST",body:form}); const data=await response.json(); if(!response.ok) throw new Error(data.error); result=data; render(data); $("status").textContent="Ready to show the shopkeeper."; }
+      catch(error) { $("status").textContent=error.message || "Something went wrong. Please try again."; }
+      finally { button.disabled=false; }
+    };
+    function render(data) {
+      $("shopLabel").textContent="In " + $("language").value + ". Check uncertain items before buying.";
+      $("result").innerHTML=`<div class="transcript"><small>Amma said</small>${escapeHtml(data.transcript)}</div>`+data.list.items.map(item=>`<div class="item"><div><div class="shop">${escapeHtml(item.shopkeeper_name)}</div><div class="telugu">${escapeHtml(item.telugu_name)}</div>${item.uncertain?'<div class="warn">Please confirm this item</div>':''}</div><div class="amount">${escapeHtml([item.quantity,item.unit].filter(Boolean).join(' '))}</div></div>`).join('');
+      $("speak").hidden=false;
+    }
+    function escapeHtml(value) { const node=document.createElement("div"); node.textContent=value||""; return node.innerHTML; }
+    $("speak").onclick = () => { if(!result) return; const words=result.list.items.map(item=>`${item.shopkeeper_name}, ${item.quantity||""} ${item.unit||""}`).join(". "); speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(words)); };
+  </script>
+</body>
+</html>
