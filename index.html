@@ -16,7 +16,7 @@
     .guide { background:linear-gradient(155deg,#5b36c8,#3d238e); color:white; border:0; } .guide h2 { color:white; } .guide .help { color:#ded7ff; } .steps { list-style:none; padding:0; margin:22px 0; counter-reset:step; } .steps li { counter-increment:step; display:grid; grid-template-columns:28px 1fr; gap:10px; margin:16px 0; color:#f7f5ff; } .steps li:before { content:counter(step); width:26px; height:26px; display:grid; place-items:center; border-radius:50%; background:var(--gold); color:#3e2800; font-weight:800; font-size:.85rem; } .tip { border-top:1px solid rgba(255,255,255,.24); padding-top:15px; color:#e9e5ff; font-size:.9rem; }
     .receipt { min-height:360px; border-radius:16px; border:1px dashed #b8bfd7; background:var(--paper); padding:17px; } .empty { color:#717993; margin-top:90px; text-align:center; }
     .transcript { border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:8px; color:#303a5c; } .transcript small { display:block; color:#757e9c; margin-bottom:4px; }
-    .item { display:grid; grid-template-columns:1fr auto; gap:8px; padding:13px 0; border-bottom:1px solid #edf0f8; } .shop { font-weight:750; } .telugu { color:#646d89; font-size:.9rem; } .amount { text-align:right; white-space:nowrap; font-weight:700; } .warn { color:#a25a00; font-size:.78rem; }
+    .item { display:grid; grid-template-columns:1fr auto; gap:8px; padding:13px 0; border-bottom:1px solid #edf0f8; } .shop { font-weight:750; } .source { color:#646d89; font-size:.9rem; } .amount { text-align:right; white-space:nowrap; font-weight:700; } .warn { color:#a25a00; font-size:.78rem; }
     .audio-panel { background:#fff4d6; border:1px solid #f2ce77; border-radius:14px; margin-top:16px; padding:12px 14px; color:#513400; } .audio-panel strong { display:block; margin-bottom:7px; } audio { width:100%; height:36px; } .status { min-height:22px; color:#606984; font-size:.9rem; margin-top:12px; }
     @media (max-width:1000px) { .grid { grid-template-columns:1fr 1fr; } .guide { grid-column:span 2; } }
     @media (max-width:720px) { .grid { grid-template-columns:1fr; } .guide { grid-column:auto; } main { padding-top:20px; } section,aside { padding:20px; } }
@@ -30,15 +30,17 @@
         <h2>How to use</h2><p class="help">Make a clear list for any shopkeeper.</p>
         <ol class="steps">
           <li><span>Tap <strong>Start recording</strong>.</span></li>
-          <li><span>Say the grocery list in Telugu.</span></li>
+          <li><span>Choose the language you will speak, then say the grocery list.</span></li>
           <li><span>Tap <strong>Stop recording</strong> and choose the shopkeeper’s language.</span></li>
           <li><span>Make the list, then play the audio at the shop.</span></li>
         </ol>
         <p class="tip"><strong>For best results:</strong> keep a note under 30 seconds and say the quantity with each item.</p>
       </aside>
       <section>
-        <h2>Amma’s list</h2><p class="help">Record a short Telugu voice note.</p>
+        <h2>Amma’s list</h2><p class="help">Record a short grocery note in your preferred language.</p>
         <button class="record" id="record" type="button">● Start recording</button>
+        <label for="sourceLanguage">I’m speaking in</label>
+        <select id="sourceLanguage"><option>Telugu</option><option>English</option><option>Hindi</option><option>Tamil</option><option>Kannada</option></select>
         <label for="language">Shopkeeper’s language</label>
         <select id="language"><option>English</option><option>Hindi</option><option>Telugu</option><option>Tamil</option><option>Kannada</option></select>
         <button class="go" id="make" type="button">Make the shop list</button><div class="status" id="status"></div>
@@ -64,16 +66,16 @@
       } catch { $("status").textContent="Microphone access was not available. Please allow it and try again."; }
     };
     $("make").onclick = async () => {
-      if (!audioBlob) { $("status").textContent="Please record a Telugu list first."; return; }
+      if (!audioBlob) { $("status").textContent="Please record a grocery list first."; return; }
       const button=$("make"); button.disabled=true; $("status").textContent="Making the list…";
-      const form=new FormData(); form.append("target_language",$("language").value); form.append("audio",audioBlob,"amma-note.webm");
-      try { const response=await fetch("/api/list",{method:"POST",body:form}); const data=await response.json(); if(!response.ok) throw new Error(data.error); result=data; render(data); $("status").textContent="Ready to show the shopkeeper."; }
+      const form=new FormData(); form.append("source_language",$("sourceLanguage").value); form.append("target_language",$("language").value); form.append("audio",audioBlob,"amma-note.webm");
+      try { const response=await fetch("/api/list",{method:"POST",body:form}); const payload=await response.text(); let data; try { data=JSON.parse(payload); } catch { throw new Error("The server returned an unexpected response. Please try again shortly."); } if(!response.ok) throw new Error(data.error || "The list could not be created."); result=data; render(data); $("status").textContent="Ready to show the shopkeeper."; }
       catch(error) { $("status").textContent=error.message || "Something went wrong. Please try again."; }
       finally { button.disabled=false; }
     };
     function render(data) {
       $("shopLabel").textContent="In " + $("language").value + ". Check uncertain items before buying.";
-      $("result").innerHTML=`<div class="transcript"><small>Amma said</small>${escapeHtml(data.transcript)}</div>`+data.list.items.map(item=>`<div class="item"><div><div class="shop">${escapeHtml(item.shopkeeper_name)}</div><div class="telugu">${escapeHtml(item.telugu_name)}</div>${item.uncertain?'<div class="warn">Please confirm this item</div>':''}</div><div class="amount">${escapeHtml([item.quantity,item.unit].filter(value=>value !== null && value !== undefined).join(' '))}</div></div>`).join('');
+      $("result").innerHTML=`<div class="transcript"><small>Spoken in ${escapeHtml(data.source_language)}</small>${escapeHtml(data.transcript)}</div>`+data.list.items.map(item=>`<div class="item"><div><div class="shop">${escapeHtml(item.shopkeeper_name)}</div><div class="source">${escapeHtml(item.source_name)}</div>${item.uncertain?'<div class="warn">Please confirm this item</div>':''}</div><div class="amount">${escapeHtml([item.quantity,item.unit].filter(value=>value !== null && value !== undefined).join(' '))}</div></div>`).join('');
       const panel=$("audioPanel"); panel.hidden=!data.audio;
       if (data.audio) { $("audioLabel").textContent="Listen in " + $("language").value; $("audio").src="data:audio/mpeg;base64," + data.audio; }
       if (data.audio_error) $("status").textContent=data.audio_error;
