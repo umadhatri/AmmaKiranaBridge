@@ -16,6 +16,13 @@ LANGUAGE_CODES = {
     "Tamil": "ta-IN",
     "Kannada": "kn-IN",
 }
+SPOKEN_INTROS = {
+    "English": "Your shopping list.",
+    "Hindi": "आपकी खरीदारी की सूची।",
+    "Telugu": "మీ కొనుగోలు జాబితా.",
+    "Tamil": "உங்கள் மளிகைப் பட்டியல்.",
+    "Kannada": "ನಿಮ್ಮ ದಿನಸಿ ಪಟ್ಟಿ.",
+}
 GROCERY_LIST_SCHEMA = {
     "name": "telugu_grocery_list",
     "description": "A precise grocery list extracted from Telugu speech.",
@@ -42,9 +49,9 @@ GROCERY_LIST_SCHEMA = {
         },
     },
 }
-ENGLISH_LABEL_SCHEMA = {
-    "name": "english_grocery_labels",
-    "description": "Semantic English grocery labels for Telugu item names.",
+SHOPKEEPER_LABEL_SCHEMA = {
+    "name": "shopkeeper_grocery_labels",
+    "description": "Semantic grocery labels in the shopkeeper's selected language.",
     "strict": True,
     "schema": {
         "type": "object",
@@ -115,19 +122,20 @@ to translation — it must be "ఉల్లి", 0.5, "kg"."""
     return structured_list(repair_prompt)
 
 
-def english_labels(items):
+def canonical_english_labels(items):
     names = [item["telugu_name"] for item in items]
-    prompt = f"""Create a shopkeeper-friendly English label for each Telugu grocery item below.
+    prompt = f"""Create a canonical English grocery label for each Telugu grocery item below.
 Items: {json.dumps(names, ensure_ascii=False)}
 
-Translate meaning, not pronunciation. Never return romanized Telugu such as "kandipappu" or "minapappu".
-Use the familiar English or Indian-English grocery term, adding a short clarifier in parentheses when helpful.
+Translate meaning, not pronunciation. Use a concise, familiar English or Indian-English grocery term of one
+to four words. Do not add parentheses, definitions, categories, or any explanation. Use a specific standard
+dal name when needed to distinguish similar dals. Never return romanized Telugu.
 Return every source item exactly once, with its source Telugu name unchanged."""
     response = client().chat.completions(
         model="sarvam-105b-conversations",
         messages=[{"role": "user", "content": prompt}],
         reasoning_effort="low",
-        response_format={"type": "json_schema", "json_schema": ENGLISH_LABEL_SCHEMA},
+        response_format={"type": "json_schema", "json_schema": SHOPKEEPER_LABEL_SCHEMA},
     )
     labels = json.loads(response.choices[0].message.content)["items"]
     return {item["telugu_name"]: item["shopkeeper_name"] for item in labels}
@@ -136,24 +144,41 @@ Return every source item exactly once, with its source Telugu name unchanged."""
 def make_list(transcript, target_language):
     shopping_list = extract_items(transcript)
     target_code = LANGUAGE_CODES[target_language]
-    labels = english_labels(shopping_list["items"]) if target_code == "en-IN" else {}
+    labels = canonical_english_labels(shopping_list["items"]) if target_code != "te-IN" else {}
     for item in shopping_list.get("items", []):
         name = item.get("telugu_name", "").strip()
         if target_code == "te-IN":
             item["shopkeeper_name"] = name
             continue
+        canonical_name = labels.get(name, name)
         if target_code == "en-IN":
-            item["shopkeeper_name"] = labels.get(name, name)
+            item["shopkeeper_name"] = canonical_name
             continue
         translation = client().text.translate(
-            input=name,
-            source_language_code="te-IN",
+            input=canonical_name,
+            source_language_code="en-IN",
             target_language_code=target_code,
             model="sarvam-translate:v1",
             numerals_format="international",
         )
         item["shopkeeper_name"] = translation.translated_text
     return shopping_list
+
+
+def make_audio(shopping_list, target_language):
+    spoken_items = []
+    for item in shopping_list["items"]:
+        amount = " ".join(str(value) for value in (item["quantity"], item["unit"]) if value is not None)
+        spoken_items.append(f"{item['shopkeeper_name']}: {amount}.")
+    speech = client().text_to_speech.convert(
+        text=" ".join([SPOKEN_INTROS[target_language], *spoken_items]),
+        language_code=LANGUAGE_CODES[target_language],
+        model="bulbul:v3",
+        speaker="shubh",
+        pace=0.9,
+        output_audio_codec="mp3",
+    )
+    return speech.audios[0]
 
 
 class App(SimpleHTTPRequestHandler):
@@ -185,7 +210,13 @@ class App(SimpleHTTPRequestHandler):
                 transcript = speech.transcript
             if not transcript:
                 raise ValueError("Record a note or type the Telugu list first.")
-            self.respond({"transcript": transcript, "list": make_list(transcript, target_language)})
+            shopping_list = make_list(transcript, target_language)
+            response = {"transcript": transcript, "list": shopping_list}
+            try:
+                response["audio"] = make_audio(shopping_list, target_language)
+            except Exception:
+                response["audio_error"] = "The list is ready, but its audio could not be generated."
+            self.respond(response)
         except Exception as error:
             self.respond({"error": str(error)}, HTTPStatus.BAD_REQUEST)
 
